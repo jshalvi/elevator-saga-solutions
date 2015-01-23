@@ -1,2 +1,3 @@
 # elevator-saga-solutions
-Solutions for Elevator Saga
+
+My solution for [Elevator Saga](http://play.elevatorsaga.com/).
