@@ -3,6 +3,7 @@
 var foo =
 {
     init: function(elevators, floors) {
+        var i, len, floor;
         var elevator;
         var upQueue, downQueue;
         var desc = function (a, b) { // reverse comparator
@@ -100,8 +101,6 @@ var foo =
             return elevator;
         }
 
-        elevator = initElevator(elevators[0]);
-
         function PQ (goingUp) {
             this.goingUp = goingUp === undefined ? false : true;
             this.items = [];
@@ -141,7 +140,10 @@ var foo =
             console.log('down button pressed', this.floorNum(), 'downQueue', downQueue.items);
         };
 
-        var i, len, floor;
+        for (i = 0, len = elevators.length; i < len; i++) {
+            elevators[i] = initElevator(elevators[i]);
+        }
+        
         for (i = 0, len = floors.length; i < len; i++) {
             floor = floors[i];
             floor.on('up_button_pressed', onUpButtonPressed);
