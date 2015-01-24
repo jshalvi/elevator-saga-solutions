@@ -37,6 +37,65 @@ var foo =
                     this.nextQueue.sort(this.goingUp ? asc : desc);
                 }
             };
+            elevator.stopRequested = function (floorNum) {
+
+                if (this.goingUp) {
+                    if (floorNum > this.currentFloor()) {
+                        this.queueDestination(floorNum);
+                    } else {
+                        this.queueNextDestination(floorNum);
+                    }
+                } else {
+                    if (floorNum < this.currentFloor()) {
+                        this.queueDestination(floorNum);
+                    } else {
+                        this.queueNextDestination(floorNum);
+                    }
+                }
+                console.log('stop requested', this.goingUp ? 'up' : 'down', 'dest', this.destinationQueue, 'next', this.nextQueue);
+            };
+            
+            elevator.on("idle", function() {
+
+                this.toggleDirection();
+
+                console.log('IDLE');
+
+                if (this.nextQueue.length > 0) {
+                    console.log('flushing queue', this.nextQueue);
+                    this.destinationQueue = this.nextQueue;
+                    this.destinationQueue.sort(this.goingUp ? asc : desc);
+                    this.nextQueue = [];
+                    this.checkDestinationQueue();
+                    return;
+                }
+                // if next queue is available
+                    // flush it
+                    // return
+                    // TODO - merge with next direction
+
+
+                var that = this;
+                var poll = function () {
+                    console.log('polling', that.goingUp, upQueue.empty(), downQueue.empty());
+                    if (that.goingUp && !upQueue.empty()) {
+                        that.setQueue(upQueue.toArray());
+                        upQueue = new PQ(true); // TODO - elevator shouldn't be doing this
+                    } else if (!that.goingUp && !downQueue.empty()) {
+                        that.setQueue(downQueue.toArray());
+                        downQueue = new PQ(); // TODO - elevator shouldn't be doing this
+                    } else {
+                        that.toggleDirection();
+                        window.setTimeout(poll, 0);
+                    }
+                };
+
+                window.setTimeout(poll, 0);
+            });
+
+            elevator.on('floor_button_pressed', function (floorNum) {
+                this.stopRequested(floorNum);
+            });
 
             return elevator;
         }
@@ -70,66 +129,6 @@ var foo =
         downQueue = new PQ();
 
 
-        elevator.stopRequested = function (floorNum) {
-
-            if (this.goingUp) {
-                if (floorNum > this.currentFloor()) {
-                    this.queueDestination(floorNum);
-                } else {
-                    this.queueNextDestination(floorNum);
-                }
-            } else {
-                if (floorNum < this.currentFloor()) {
-                    this.queueDestination(floorNum);
-                } else {
-                    this.queueNextDestination(floorNum);
-                }
-            }
-            console.log('stop requested', this.goingUp ? 'up' : 'down', 'dest', this.destinationQueue, 'next', this.nextQueue);
-        };
-        
-        elevator.on("idle", function() {
-
-            this.toggleDirection();
-
-            console.log('IDLE');
-
-            if (this.nextQueue.length > 0) {
-                console.log('flushing queue', this.nextQueue);
-                this.destinationQueue = this.nextQueue;
-                this.destinationQueue.sort(this.goingUp ? asc : desc);
-                this.nextQueue = [];
-                this.checkDestinationQueue();
-                return;
-            }
-            // if next queue is available
-                // flush it
-                // return
-                // TODO - merge with next direction
-
-
-            var that = this;
-            var poll = function () {
-                console.log('polling', that.goingUp, upQueue.empty(), downQueue.empty());
-                if (that.goingUp && !upQueue.empty()) {
-                    that.setQueue(upQueue.toArray());
-                    upQueue = new PQ(true); // TODO - elevator shouldn't be doing this
-                } else if (!that.goingUp && !downQueue.empty()) {
-                    that.setQueue(downQueue.toArray());
-                    downQueue = new PQ(); // TODO - elevator shouldn't be doing this
-                } else {
-                    that.toggleDirection();
-                    window.setTimeout(poll, 0);
-                }
-            };
-
-            window.setTimeout(poll, 0);
-        });
-
-        elevator.on('floor_button_pressed', function (floorNum) {
-            this.stopRequested(floorNum);
-        });
-        
         var onUpButtonPressed = function () {
             // elevator.stopRequested(this.floorNum());
             upQueue.add(this.floorNum());
