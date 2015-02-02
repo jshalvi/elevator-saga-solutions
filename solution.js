@@ -16,17 +16,24 @@ var foo =
         function initElevator (elevator) {
 
             elevator.goingUp = true;
+
+            elevator.goingDownIndicator(false);
+            elevator.goingUpIndicator(true);
             elevator.toggleDirection = function () {
                 this.goingUp = !this.goingUp;
-                
+                this.goingUpIndicator(this.goingUp);
+                this.goingDownIndicator(!this.goingUp);
             };
             elevator.nextQueue = [];
             elevator.setQueue = function (queue) {
+                console.log('queue (setQueue)', queue);
                 this.destinationQueue = queue;
+                this.destinationQueue.sort(this.goingUp ? asc : desc);
                 this.checkDestinationQueue();
             };
             elevator.queueDestination = function (floorNum) {
                 if (this.destinationQueue.indexOf(floorNum) === -1) {
+                    console.log('queue (queueDestination)', this.destinationQueue);
                     this.destinationQueue.push(floorNum);
                     this.destinationQueue.sort(this.goingUp ? asc : desc);
                     this.checkDestinationQueue();
@@ -53,45 +60,28 @@ var foo =
                         this.queueNextDestination(floorNum);
                     }
                 }
-                console.log('stop requested', this.goingUp ? 'up' : 'down', 'dest', this.destinationQueue, 'next', this.nextQueue);
+            };
+
+            elevator.setScheduler = function(scheduler) {
+                this.scheduler = scheduler;
             };
             
             elevator.on("idle", function() {
 
-                this.toggleDirection();
 
-                console.log('IDLE');
-
-                if (this.nextQueue.length > 0) {
-                    console.log('flushing queue', this.nextQueue);
-                    this.destinationQueue = this.nextQueue;
-                    this.destinationQueue.sort(this.goingUp ? asc : desc);
-                    this.nextQueue = [];
-                    this.checkDestinationQueue();
-                    return;
-                }
-                // if next queue is available
-                    // flush it
-                    // return
-                    // TODO - merge with next direction
-
-
-                var that = this;
                 var poll = function () {
-                    console.log('polling', that.goingUp, upQueue.empty(), downQueue.empty());
-                    if (that.goingUp && !upQueue.empty()) {
-                        that.setQueue(upQueue.toArray());
-                        upQueue = new PQ(true); // TODO - elevator shouldn't be doing this
-                    } else if (!that.goingUp && !downQueue.empty()) {
-                        that.setQueue(downQueue.toArray());
-                        downQueue = new PQ(); // TODO - elevator shouldn't be doing this
+
+                    this.toggleDirection();
+
+                    var newQueue = this.scheduler.getQueue(this);
+
+                    if (newQueue.length > 0) {
+                        this.setQueue(newQueue);
                     } else {
-                        that.toggleDirection();
                         window.setTimeout(poll, 0);
                     }
-                };
-
-                window.setTimeout(poll, 0);
+                }.bind(this);
+                poll();
             });
 
             elevator.on('floor_button_pressed', function (floorNum) {
@@ -100,6 +90,46 @@ var foo =
 
             return elevator;
         }
+
+        function Scheduler (floors) {
+
+            this.upQueue = new PQ(true);
+            this.downQueue = new PQ();
+
+            var that = this;
+            var onUpButtonPressed = function () {
+                that.upQueue.add(this.floorNum());
+            };
+            var onDownButtonPressed = function () {
+                that.downQueue.add(this.floorNum());
+            };
+
+            for (i = 0, len = floors.length; i < len; i++) {
+                floor = floors[i];
+                floor.on('up_button_pressed', onUpButtonPressed);
+                floor.on('down_button_pressed', onDownButtonPressed);
+            }
+        }
+        Scheduler.prototype.getQueue = function(elevator) {
+                    
+            var queue;
+
+            if (elevator.goingUp && !this.upQueue.empty()) {
+                queue = this.upQueue.toArray();
+                this.upQueue = new PQ(true);
+                console.log('returning upQueue');
+            } else if (!elevator.goingUp && !this.downQueue.empty()) {
+                queue = this.downQueue.toArray();
+                this.downQueue = new PQ();
+                console.log('returning downQueue');
+            } else {
+                queue = [];
+            }
+
+            // TODO add direction
+            return queue;
+        };
+
 
         function PQ (goingUp) {
             this.goingUp = goingUp === undefined ? false : true;
@@ -124,31 +154,13 @@ var foo =
             return this.items;
         };
 
-        upQueue = new PQ(true);
-        downQueue = new PQ();
-
-
-        var onUpButtonPressed = function () {
-            // elevator.stopRequested(this.floorNum());
-            upQueue.add(this.floorNum());
-            console.log('up button pressed', this.floorNum(), 'upQueue', upQueue.items);
-        };
-
-        var onDownButtonPressed = function () {
-            // elevator.stopRequested(this.floorNum());
-            downQueue.add(this.floorNum());
-            console.log('down button pressed', this.floorNum(), 'downQueue', downQueue.items);
-        };
+        var scheduler = new Scheduler(floors);
 
         for (i = 0, len = elevators.length; i < len; i++) {
             elevators[i] = initElevator(elevators[i]);
+            elevators[i].setScheduler(scheduler);
         }
         
-        for (i = 0, len = floors.length; i < len; i++) {
-            floor = floors[i];
-            floor.on('up_button_pressed', onUpButtonPressed);
-            floor.on('down_button_pressed', onDownButtonPressed);
-        }
     },
     update: function(dt, elevators, floors) {
         // We normally don't need to do anything here
