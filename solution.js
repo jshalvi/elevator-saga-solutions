@@ -19,21 +19,19 @@ var foo =
 
             elevator.goingDownIndicator(false);
             elevator.goingUpIndicator(true);
-            elevator.toggleDirection = function () {
-                this.goingUp = !this.goingUp;
+            elevator.setDirection = function (direction) {
+                this.goingUp = direction === 'up';
                 this.goingUpIndicator(this.goingUp);
                 this.goingDownIndicator(!this.goingUp);
             };
             elevator.nextQueue = [];
             elevator.setQueue = function (queue) {
-                console.log('queue (setQueue)', queue);
                 this.destinationQueue = queue;
                 this.destinationQueue.sort(this.goingUp ? asc : desc);
                 this.checkDestinationQueue();
             };
             elevator.queueDestination = function (floorNum) {
                 if (this.destinationQueue.indexOf(floorNum) === -1) {
-                    console.log('queue (queueDestination)', this.destinationQueue);
                     this.destinationQueue.push(floorNum);
                     this.destinationQueue.sort(this.goingUp ? asc : desc);
                     this.checkDestinationQueue();
@@ -68,15 +66,18 @@ var foo =
             
             elevator.on("idle", function() {
 
+                if (this.nextQueue) {
+                    this.setQueue(this.nextQueue);
+                    this.nextQueue = [];
+                }
 
                 var poll = function () {
 
-                    this.toggleDirection();
-
                     var newQueue = this.scheduler.getQueue(this);
 
-                    if (newQueue.length > 0) {
-                        this.setQueue(newQueue);
+                    if (newQueue.queue.length > 0) {
+                        this.setDirection(newQueue.direction);
+                        this.setQueue(newQueue.queue);
                     } else {
                         window.setTimeout(poll, 0);
                     }
@@ -95,13 +96,16 @@ var foo =
 
             this.upQueue = new PQ(true);
             this.downQueue = new PQ();
+            this.nextDirection = 'up';
 
             var that = this;
             var onUpButtonPressed = function () {
                 that.upQueue.add(this.floorNum());
+                console.log('pushed ' + this.floorNum(), that.upQueue.toArray(), that.downQueue.toArray());
             };
             var onDownButtonPressed = function () {
                 that.downQueue.add(this.floorNum());
+                console.log('pushed ' + this.floorNum(), that.upQueue.toArray(), that.downQueue.toArray());
             };
 
             for (i = 0, len = floors.length; i < len; i++) {
@@ -112,22 +116,31 @@ var foo =
         }
         Scheduler.prototype.getQueue = function(elevator) {
                     
-            var queue;
+            var direction, queue;
 
-            if (elevator.goingUp && !this.upQueue.empty()) {
+            if (!this.upQueue.empty() && !elevator.goingUp) {
+
                 queue = this.upQueue.toArray();
+                direction = 'up';
                 this.upQueue = new PQ(true);
-                console.log('returning upQueue');
-            } else if (!elevator.goingUp && !this.downQueue.empty()) {
+                this.nextDirection = 'down';
+
+            } else if (!this.downQueue.empty()) {
+
                 queue = this.downQueue.toArray();
+                direction = 'down';
+                this.nextDirection = 'up';
                 this.downQueue = new PQ();
-                console.log('returning downQueue');
+
             } else {
+
                 queue = [];
             }
 
-            // TODO add direction
-            return queue;
+            return {
+                direction: direction,
+                queue: queue
+            };
         };
 
 
