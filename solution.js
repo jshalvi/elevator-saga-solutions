@@ -58,24 +58,31 @@ var foo =
                         this.queueNextDestination(floorNum);
                     }
                 }
+
+                this.scheduler.clearStop(floorNum, this.goingUp ? 'up' : 'down');
             };
 
             elevator.setScheduler = function(scheduler) {
                 this.scheduler = scheduler;
             };
             
-            elevator.on("idle", function() {
+            elevator.on('passing_floor', function(floor, direction) {
+                
+                if (this.loadFactor() < 0.8 && this.scheduler.stopAtFloor(floor, direction)) {
+                    var newQueue =[floor].concat(this.destinationQueue); 
 
-                if (this.nextQueue) {
-                    this.setQueue(this.nextQueue);
-                    this.nextQueue = [];
+                    this.setQueue(newQueue);
                 }
+            });
+
+            elevator.on('idle', function() {
 
                 var poll = function () {
 
                     var newQueue = this.scheduler.getQueue(this);
 
                     if (newQueue.queue.length > 0) {
+                        console.log('received queue', newQueue.direction, newQueue.queue);
                         this.setDirection(newQueue.direction);
                         this.setQueue(newQueue.queue);
                     } else {
@@ -94,18 +101,22 @@ var foo =
 
         function Scheduler (floors) {
 
-            this.upQueue = new PQ(true);
-            this.downQueue = new PQ();
+            this.upQueue = [];
+            this.downQueue = [];
             this.nextDirection = 'up';
 
             var that = this;
             var onUpButtonPressed = function () {
-                that.upQueue.add(this.floorNum());
-                console.log('pushed ' + this.floorNum(), that.upQueue.toArray(), that.downQueue.toArray());
+                if (that.upQueue.indexOf(this.floorNum()) === -1) {
+                    that.upQueue.push(this.floorNum());
+                }
+                console.log('pushed ' + this.floorNum() + ' up', that.upQueue, that.downQueue);
             };
             var onDownButtonPressed = function () {
-                that.downQueue.add(this.floorNum());
-                console.log('pushed ' + this.floorNum(), that.upQueue.toArray(), that.downQueue.toArray());
+                if (that.downQueue.indexOf(this.floorNum()) === -1) {
+                    that.downQueue.push(this.floorNum());
+                }
+                console.log('pushed ' + this.floorNum() + ' down' , that.upQueue, that.downQueue);
             };
 
             for (i = 0, len = floors.length; i < len; i++) {
@@ -114,57 +125,75 @@ var foo =
                 floor.on('down_button_pressed', onDownButtonPressed);
             }
         }
-        Scheduler.prototype.getQueue = function(elevator) {
-                    
-            var direction, queue;
+        Scheduler.prototype.getDirectionalQueue = function(direction) {
+            return direction === 'up' ? this.upQueue : this.downQueue;
+        };
+        Scheduler.prototype.clearStop = function(floor, direction) {
 
-            if (!this.upQueue.empty() && !elevator.goingUp) {
+            var idx, queue;
+            queue = this.getDirectionalQueue(direction);
+            idx = queue.indexOf(floor);
 
-                queue = this.upQueue.toArray();
-                direction = 'up';
-                this.upQueue = new PQ(true);
-                this.nextDirection = 'down';
+            if (idx > -1) {
+                queue.splice(idx, 1);
+            }
+        };
+        Scheduler.prototype.stopAtFloor = function(floor, direction) {
 
-            } else if (!this.downQueue.empty()) {
+            var idx, queue;
 
-                queue = this.downQueue.toArray();
-                direction = 'down';
-                this.nextDirection = 'up';
-                this.downQueue = new PQ();
+            queue = this.getDirectionalQueue(direction);
 
-            } else {
+            idx = queue.indexOf(floor);
 
-                queue = [];
+            if (idx > -1) {
+                queue.splice(idx, 1);
+                return true;
             }
 
+            return false;
+        };
+        Scheduler.prototype.getQueue = function(elevator) {
+                    
+            var direction, queue = [];
+            var next = this.nextQueue;
+
+            if (elevator.nextQueue.length > 0) {
+                direction = elevator.goingUp ? 'up' : 'down';
+                queue = elevator.nextQueue;
+                elevator.nextQueue = [];
+            } else if (elevator.currentFloor() !== 0) {
+                direction = 'down';
+                queue = this.downQueue.splice(0, 1);
+
+                if (queue.length === 0) {
+                    direction = 'up';
+                    queue = [0];
+                }
+            } else {
+
+                if (this.upQueue.indexOf(0) === -1 && this.downQueue.length > 0) {
+                    console.log('going up...');
+                    var highestFloor = this.downQueue.reduce(function (prev, curr) {
+                        return prev > curr ? prev : curr;
+                    }, this.downQueue[0]);
+
+                    this.downQueue.splice(this.downQueue.indexOf(highestFloor), 1);
+                    
+
+                    direction = 'down';
+                    queue = [highestFloor];
+
+                } else {
+                    direction = 'up';
+                    queue = [0];
+                }
+            }
+            
             return {
                 direction: direction,
                 queue: queue
             };
-        };
-
-
-        function PQ (goingUp) {
-            this.goingUp = goingUp === undefined ? false : true;
-            this.items = [];
-        }
-        PQ.prototype.add = function (floorNum) {
-            if (this.items.indexOf(floorNum) === -1) {
-                this.items.push(floorNum);
-                var that = this;
-
-                var direction = this.goingUp ? 1 : -1;
-
-                this.items.sort(function (a, b) {
-                    return direction * (a - b);
-                });
-            }
-        };
-        PQ.prototype.empty = function () {
-            return this.items.length === 0;
-        };
-        PQ.prototype.toArray = function () {
-            return this.items;
         };
 
         var scheduler = new Scheduler(floors);
