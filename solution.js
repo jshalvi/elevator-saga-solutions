@@ -12,19 +12,23 @@ var foo =
         var asc = function (a, b) {
             return a - b;
         };
+        var UP = 'up',
+            DOWN = 'down',
+            IDLE = 'idle';
 
         function initElevator (elevator) {
 
             elevator.goingUp = true;
+            elevator.direction = IDLE;
 
             elevator.goingDownIndicator(false);
             elevator.goingUpIndicator(true);
             elevator.setDirection = function (direction) {
-                this.goingUp = direction === 'up';
-                this.goingUpIndicator(this.goingUp);
-                this.goingDownIndicator(!this.goingUp);
+                this.goingUp = direction === UP;
+                this.direction = direction;
+                this.goingUpIndicator(direction === UP);
+                this.goingDownIndicator(direction === DOWN);
             };
-            elevator.nextQueue = [];
             elevator.setQueue = function (queue) {
                 this.destinationQueue = queue;
                 this.destinationQueue.sort(this.goingUp ? asc : desc);
@@ -37,25 +41,15 @@ var foo =
                     this.checkDestinationQueue();
                 }
             };
-            elevator.queueNextDestination = function (floorNum) {
-                if (this.nextQueue.indexOf(floorNum) === -1) {
-                    this.nextQueue.push(floorNum);
-                    this.nextQueue.sort(this.goingUp ? asc : desc);
-                }
-            };
             elevator.stopRequested = function (floorNum) {
 
                 if (this.goingUp) {
                     if (floorNum > this.currentFloor()) {
                         this.queueDestination(floorNum);
-                    } else {
-                        this.queueNextDestination(floorNum);
                     }
                 } else {
                     if (floorNum < this.currentFloor()) {
                         this.queueDestination(floorNum);
-                    } else {
-                        this.queueNextDestination(floorNum);
                     }
                 }
 
@@ -68,7 +62,8 @@ var foo =
             
             elevator.on('passing_floor', function(floor, direction) {
                 
-                if (this.loadFactor() < 0.8 && this.scheduler.stopAtFloor(floor, direction)) {
+                // TODO - need a more scalable way to distribute pickups than simple mods
+                if (this.loadFactor() < 0.7 && this.id % 2 == floor % 2 && this.scheduler.stopAtFloor(floor, direction)) {
                     var newQueue =[floor].concat(this.destinationQueue); 
 
                     this.setQueue(newQueue);
@@ -77,12 +72,13 @@ var foo =
 
             elevator.on('idle', function() {
 
+                elevator.setDirection(IDLE);
+
                 var poll = function () {
 
                     var newQueue = this.scheduler.getQueue(this);
 
                     if (newQueue.queue.length > 0) {
-                        console.log('received queue', newQueue.direction, newQueue.queue);
                         this.setDirection(newQueue.direction);
                         this.setQueue(newQueue.queue);
                     } else {
@@ -110,13 +106,11 @@ var foo =
                 if (that.upQueue.indexOf(this.floorNum()) === -1) {
                     that.upQueue.push(this.floorNum());
                 }
-                console.log('pushed ' + this.floorNum() + ' up', that.upQueue, that.downQueue);
             };
             var onDownButtonPressed = function () {
                 if (that.downQueue.indexOf(this.floorNum()) === -1) {
                     that.downQueue.push(this.floorNum());
                 }
-                console.log('pushed ' + this.floorNum() + ' down' , that.upQueue, that.downQueue);
             };
 
             for (i = 0, len = floors.length; i < len; i++) {
@@ -156,37 +150,65 @@ var foo =
         Scheduler.prototype.getQueue = function(elevator) {
                     
             var direction, queue = [];
-            var next = this.nextQueue;
 
-            if (elevator.nextQueue.length > 0) {
-                direction = elevator.goingUp ? 'up' : 'down';
-                queue = elevator.nextQueue;
-                elevator.nextQueue = [];
-            } else if (elevator.currentFloor() !== 0) {
-                direction = 'down';
-                queue = this.downQueue.splice(0, 1);
+            if (elevator.currentFloor() !== 0) {
 
-                if (queue.length === 0) {
-                    direction = 'up';
-                    queue = [0];
+                var maxPressed;
+
+                var max = function (prev, curr) {
+                    if (prev === undefined) {
+                        return curr;
+                    } else {
+                        return curr > prev ? curr : prev;
+                    }
+                };
+
+                // find max pickUp among elevators
+                var highestPressed = elevator.getPressedFloors().reduce(max, -1);
+
+                var highestPressedGlobal = elevators.map(function (el) {
+                    return el.getPressedFloors().reduce(max, -1);
+                }).reduce(max, -1);
+
+                var highestDown = this.downQueue.reduce(max, -1);
+
+                if (highestPressedGlobal < highestDown) {
+
+                    this.clearStop(highestDown, DOWN);
+                    direction = DOWN;
+                    queue = [highestDown, 0]; 
+
+                } else {
+
+                    var currentFloor = elevator.currentFloor();
+                    this.clearStop(currentFloor, DOWN);
+                    direction = DOWN;
+                    queue = [currentFloor, 0];
+
                 }
+
             } else {
 
-                if (this.upQueue.indexOf(0) === -1 && this.downQueue.length > 0) {
-                    console.log('going up...');
+                if (this.upQueue.indexOf(0) !== -1) {
+
+                    direction = UP;
+                    queue = [0];
+
+                } else if (this.downQueue.length > 0) {
+
                     var highestFloor = this.downQueue.reduce(function (prev, curr) {
                         return prev > curr ? prev : curr;
                     }, this.downQueue[0]);
 
-                    this.downQueue.splice(this.downQueue.indexOf(highestFloor), 1);
-                    
+                    this.clearStop(highestFloor, DOWN);
 
-                    direction = 'down';
+                    direction = DOWN;
                     queue = [highestFloor];
 
                 } else {
-                    direction = 'up';
-                    queue = [0];
+
+                    direction = IDLE;
+                    queue = [];
                 }
             }
             
@@ -201,6 +223,7 @@ var foo =
         for (i = 0, len = elevators.length; i < len; i++) {
             elevators[i] = initElevator(elevators[i]);
             elevators[i].setScheduler(scheduler);
+            elevators[i].id = i;
         }
         
     },
